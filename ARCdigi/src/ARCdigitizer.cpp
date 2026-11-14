@@ -15,6 +15,7 @@ DECLARE_COMPONENT(ARCdigitizer)
 ARCdigitizer::ARCdigitizer(const std::string& aName, ISvcLocator* aSvcLoc) : Gaudi::Algorithm(aName, aSvcLoc) {
   declareProperty("inputSimHits", m_input_sim_hits, "Input sim tracker hit collection name");
   declareProperty("outputDigiHits", m_output_digi_hits, "Output digitized tracker hit collection name");
+  declareProperty("headerCollection", m_headers, "Event header collection, used to seed the random numbers");
 }
 
 ARCdigitizer::~ARCdigitizer() {}
@@ -26,14 +27,10 @@ StatusCode ARCdigitizer::initialize() {
     error() << "Couldn't fetch detector instance!" << endmsg;
     return StatusCode::FAILURE;
   }
-  // Initialize random number service
-  m_randSvc = service("RndmGenSvc", false);
-  if (!m_randSvc) {
-    error() << "Couldn't get RndmGenSvc!" << endmsg;
-    return StatusCode::FAILURE;
-  }
-  if (m_uniform.initialize(m_randSvc, Rndm::Flat(0.0, 1.0)).isFailure()) {
-    error() << "Couldn't initialize RndmGenSvc!" << endmsg;
+  // Unique ID service, used to seed the random number engine for each event
+  m_uidSvc = service<IUniqueIDGenSvc>("UniqueIDGenSvc", true);
+  if (!m_uidSvc) {
+    error() << "Unable to get UniqueIDGenSvc" << endmsg;
     return StatusCode::FAILURE;
   }
   // Sanity check on efficiency cut
@@ -49,13 +46,17 @@ StatusCode ARCdigitizer::execute(const EventContext&) const {
   const edm4hep::SimTrackerHitCollection* input_sim_hits = m_input_sim_hits.get();
   verbose() << "Input Sim Hit collection size: " << input_sim_hits->size() << endmsg;
 
+  // Seed the random number engine for this event (TRandom3 treats a seed of 0 as "random", so avoid it)
+  const auto seed = m_uidSvc->getUniqueID(*m_headers.get(), name()) & 0xffffffff;
+  m_engine.SetSeed(seed != 0 ? seed : 1);
+
   // Dictionary to keep track of cell IDs and (summed) deposited energies / (earliest) arrival times
   std::unordered_map<uint64_t, std::pair<float, float>> merged_digi_hits;
 
   // Digitize the sim hits
   for (const auto& input_sim_hit : *input_sim_hits) {
     // Throw away simulated hits based on flat SiPM efficiency
-    if (!m_apply_SiPM_effi_to_digi && m_flat_SiPM_effi >= 0.0 && m_uniform.shoot() > m_flat_SiPM_effi)
+    if (!m_apply_SiPM_effi_to_digi && m_flat_SiPM_effi >= 0.0 && m_engine.Uniform(0., 1.) > m_flat_SiPM_effi)
       continue;
     auto cell = input_sim_hit.getCellID();
     if (merged_digi_hits.find(cell) == merged_digi_hits.end())
@@ -72,7 +73,7 @@ StatusCode ARCdigitizer::execute(const EventContext&) const {
   edm4hep::TrackerHit3DCollection* output_digi_hits = m_output_digi_hits.createAndPut();
   for (auto it = merged_digi_hits.begin(); it != merged_digi_hits.end(); it++) {
     // Throw away digitized hits based on flat SiPM efficiency
-    if (m_apply_SiPM_effi_to_digi && m_flat_SiPM_effi >= 0.0 && m_uniform.shoot() > m_flat_SiPM_effi)
+    if (m_apply_SiPM_effi_to_digi && m_flat_SiPM_effi >= 0.0 && m_engine.Uniform(0., 1.) > m_flat_SiPM_effi)
       continue;
     auto output_digi_hit = output_digi_hits->create();
     auto pos = converter.position(it->first);

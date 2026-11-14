@@ -8,40 +8,17 @@ VTXdigitizer::VTXdigitizer(const std::string& aName, ISvcLocator* aSvcLoc)
   declareProperty("outputDigiHits", m_output_digi_hits, "Output digitized vertex hit collection name");
   declareProperty("outputSimDigiAssociation", m_output_sim_digi_link,
                   "Output link between sim hits and digitized hits");
+  declareProperty("headerCollection", m_headers, "Event header collection, used to seed the random numbers");
 }
 
 VTXdigitizer::~VTXdigitizer() {}
 
 StatusCode VTXdigitizer::initialize() {
-  // Initialize random services
-  m_randSvc = service("RndmGenSvc", false);
-  if (!m_randSvc) {
-    error() << "Couldn't get RndmGenSvc!" << endmsg;
+  // Unique ID service, used to seed the random number engine for each event
+  m_uidSvc = service<IUniqueIDGenSvc>("UniqueIDGenSvc", true);
+  if (!m_uidSvc) {
+    error() << "Unable to get UniqueIDGenSvc" << endmsg;
     return StatusCode::FAILURE;
-  }
-
-  m_gauss_x_vec.resize(m_x_resolution.size());
-  for (size_t i = 0; i < m_x_resolution.size(); ++i) {
-    if (m_gauss_x_vec[i].initialize(m_randSvc, Rndm::Gauss(0., m_x_resolution[i])).isFailure()) {
-      error() << "Couldn't initialize RndmGenSvc!" << endmsg;
-      return StatusCode::FAILURE;
-    }
-  }
-
-  m_gauss_y_vec.resize(m_y_resolution.size());
-  for (size_t i = 0; i < m_y_resolution.size(); ++i) {
-    if (m_gauss_y_vec[i].initialize(m_randSvc, Rndm::Gauss(0., m_y_resolution[i])).isFailure()) {
-      error() << "Couldn't initialize RndmGenSvc!" << endmsg;
-      return StatusCode::FAILURE;
-    }
-  }
-
-  m_gauss_t_vec.resize(m_t_resolution.size());
-  for (size_t i = 0; i < m_t_resolution.size(); ++i) {
-    if (m_gauss_t_vec[i].initialize(m_randSvc, Rndm::Gauss(0., m_t_resolution[i])).isFailure()) {
-      error() << "Couldn't initialize RndmGenSvc!" << endmsg;
-      return StatusCode::FAILURE;
-    }
   }
 
   // check if readout exists
@@ -71,6 +48,10 @@ StatusCode VTXdigitizer::execute(const EventContext&) const {
   // Get the input collection with Geant4 hits
   const edm4hep::SimTrackerHitCollection* input_sim_hits = m_input_sim_hits.get();
   verbose() << "Input Sim Hit collection size: " << input_sim_hits->size() << endmsg;
+
+  // Seed the random number engine for this event (TRandom3 treats a seed of 0 as "random", so avoid it)
+  const auto seed = m_uidSvc->getUniqueID(*m_headers.get(), name()) & 0xffffffff;
+  m_engine.SetSeed(seed != 0 ? seed : 1);
 
   // Digitize the sim hits
   edm4hep::TrackerHit3DCollection* output_digi_hits = m_output_digi_hits.createAndPut();
@@ -157,12 +138,12 @@ StatusCode VTXdigitizer::execute(const EventContext&) const {
     if (m_readoutName == "VertexBarrelCollection" ||
         m_readoutName == "SiWrBCollection") { // In barrel, the sensor box is along y-z
       digiHitLocalPosition[0] = simHitLocalPositionVector.x();
-      digiHitLocalPosition[1] = simHitLocalPositionVector.y() + m_gauss_x_vec[iLayer].shoot() * dd4hep::mm;
-      digiHitLocalPosition[2] = simHitLocalPositionVector.z() + m_gauss_y_vec[iLayer].shoot() * dd4hep::mm;
+      digiHitLocalPosition[1] = simHitLocalPositionVector.y() + m_engine.Gaus(0., m_x_resolution[iLayer]) * dd4hep::mm;
+      digiHitLocalPosition[2] = simHitLocalPositionVector.z() + m_engine.Gaus(0., m_y_resolution[iLayer]) * dd4hep::mm;
     } else if (m_readoutName == "VertexEndcapCollection" ||
                m_readoutName == "SiWrDCollection") { // In the disks, the sensor box is already in x-y
-      digiHitLocalPosition[0] = simHitLocalPositionVector.x() + m_gauss_x_vec[iLayer].shoot() * dd4hep::mm;
-      digiHitLocalPosition[1] = simHitLocalPositionVector.y() + m_gauss_y_vec[iLayer].shoot() * dd4hep::mm;
+      digiHitLocalPosition[0] = simHitLocalPositionVector.x() + m_engine.Gaus(0., m_x_resolution[iLayer]) * dd4hep::mm;
+      digiHitLocalPosition[1] = simHitLocalPositionVector.y() + m_engine.Gaus(0., m_y_resolution[iLayer]) * dd4hep::mm;
       digiHitLocalPosition[2] = simHitLocalPositionVector.z();
     } else {
       error() << "VTX readout name (m_readoutName) unknown or xResolution/yResolution/tResolution not defining all "
@@ -192,7 +173,7 @@ StatusCode VTXdigitizer::execute(const EventContext&) const {
     output_digi_hit.setPosition(digiHitGlobalPositionVector);
 
     // Apply time smearing
-    output_digi_hit.setTime(input_sim_hit.getTime() + m_gauss_t_vec[iLayer].shoot());
+    output_digi_hit.setTime(input_sim_hit.getTime() + m_engine.Gaus(0., m_t_resolution[iLayer]));
 
     output_digi_hit.setCellID(cellID);
 

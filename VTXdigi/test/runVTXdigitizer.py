@@ -358,8 +358,14 @@ geantsim.AuditExecute = True
 #  )
 
 # IDEA
+# EventHeader, needed to seed the random numbers of the digitizer for each event
+from Configurables import EventHeaderCreator
+
+eventHeaderCreator = EventHeaderCreator("eventHeaderCreator")
+
 ApplicationMgr(
     TopAlg=[
+        eventHeaderCreator,
         genAlg,
         hepmc_converter,
         geantsim,

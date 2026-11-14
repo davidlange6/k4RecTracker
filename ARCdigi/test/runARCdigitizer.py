@@ -13,7 +13,7 @@ geoservice.detectors = [os.path.join(path_to_detector, _det) for _det in detecto
 
 iosvc = IOSvc()
 iosvc.Input = vars().get("input", "data/arcsim_kaon+_edm4hep.root")
-iosvc.CollectionNames = ["ARC_HITS"]
+iosvc.CollectionNames = ["ARC_HITS", "EventHeader"]
 iosvc.Output = vars().get("output", "digi.root")
 iosvc.outputCommands = ["keep *"]
 

@@ -5,7 +5,7 @@
 DECLARE_COMPONENT(VTXdigitizerDetailed)
 
 VTXdigitizerDetailed::VTXdigitizerDetailed(const std::string& aname, ISvcLocator* asvcLoc)
-    : MultiTransformer(aname, asvcLoc, {KeyValue("inputSimHits", "")},
+    : MultiTransformer(aname, asvcLoc, {KeyValue("inputSimHits", ""), KeyValue("headerCollection", "EventHeader")},
                        {KeyValue("outputDigiHits", ""), KeyValue("outputSimDigiAssociation", "")}) {}
 
 StatusCode VTXdigitizerDetailed::initialize() {
@@ -99,25 +99,10 @@ StatusCode VTXdigitizerDetailed::initialize() {
     hActivePixelPerlayer->SetDirectory(0);
   }
 
-  // Initialize random services
-  m_randSvc = service("RndmGenSvc", false);
-  if (!m_randSvc) {
-    error() << "Couldn't get RndmGenSvc!" << endmsg;
-    return StatusCode::FAILURE;
-  }
-
-  // Initialize Gaussian random generator for time smearing
-  m_gauss_t_vec.resize(m_t_resolution.size());
-  for (size_t i = 0; i < m_t_resolution.size(); ++i) {
-    if (m_gauss_t_vec[i].initialize(m_randSvc, Rndm::Gauss(0., m_t_resolution[i])).isFailure()) {
-      error() << "Couldn't initialize RndmGenSvc!" << endmsg;
-      return StatusCode::FAILURE;
-    }
-  }
-
-  // Initialize Gaussian random generator for threshold smearing
-  if (m_gauss_threshold.initialize(m_randSvc, Rndm::Gauss(m_Threshold, m_ThresholdSmearing)).isFailure()) {
-    error() << "Couldn't initialize Gaussian generator for threshold smearing!" << endmsg;
+  // Unique ID service, used to seed the random number engine for each event
+  m_uidSvc = service<IUniqueIDGenSvc>("UniqueIDGenSvc", true);
+  if (!m_uidSvc) {
+    error() << "Unable to get UniqueIDGenSvc" << endmsg;
     return StatusCode::FAILURE;
   }
 
@@ -190,9 +175,14 @@ StatusCode VTXdigitizerDetailed::initialize() {
 }
 
 std::tuple<edm4hep::TrackerHitPlaneCollection, edm4hep::TrackerHitSimTrackerHitLinkCollection>
-VTXdigitizerDetailed::operator()(const edm4hep::SimTrackerHitCollection& inputSimHits) const {
+VTXdigitizerDetailed::operator()(const edm4hep::SimTrackerHitCollection& inputSimHits,
+                                 const edm4hep::EventHeaderCollection& headers) const {
   // Get the input collection with Geant4 hits
   verbose() << "Input Sim Hit collection size: " << inputSimHits.size() << endmsg;
+
+  // Seed the random number engine for this event (TRandom3 treats a seed of 0 as "random", so avoid it)
+  const auto seed = m_uidSvc->getUniqueID(headers, name()) & 0xffffffff;
+  m_engine.SetSeed(seed != 0 ? seed : 1);
 
   // Check if it is produced by Secondaries or Overlay
   int nSecondaryHits = 0;
@@ -720,7 +710,7 @@ bool VTXdigitizerDetailed::Apply_Threshold(double& ChargeInE) const {
   double ThresholdInE = 0;
 
   if (m_ThresholdSmearing > 0) {
-    ThresholdInE = m_gauss_threshold();
+    ThresholdInE = m_engine.Gaus(m_Threshold, m_ThresholdSmearing);
   } else {
     ThresholdInE = m_Threshold;
   }
@@ -902,7 +892,7 @@ void VTXdigitizerDetailed::generate_output(const edm4hep::SimTrackerHit& hit,
   output_digi_hit.setPosition(DigiGlobalPosVec);
 
   // Apply time smearing
-  output_digi_hit.setTime(hit.getTime() + m_gauss_t_vec[ilayer].shoot());
+  output_digi_hit.setTime(hit.getTime() + m_engine.Gaus(0., m_t_resolution[ilayer]));
 
   output_digi_hit.setCellID(cellID);
 

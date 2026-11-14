@@ -8,7 +8,7 @@ geoservice.detectors.append("/path/to/k4geo/FCCee/compact/CLD_ARC/arc_full_v0.xm
 
 iosvc = IOSvc()
 iosvc.Input = vars().get("input", "data/arcsim_kaon+_edm4hep.root")
-iosvc.CollectionNames = ["ARC_HITS"]
+iosvc.CollectionNames = ["ARC_HITS", "EventHeader"]
 iosvc.Output = vars().get("output", "digi.root")
 iosvc.outputCommands = ["keep *"]
 

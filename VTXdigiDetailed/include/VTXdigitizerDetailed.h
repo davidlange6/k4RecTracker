@@ -5,6 +5,7 @@
 #include "TFile.h"
 #include "TH1D.h"
 #include "TH2D.h"
+#include "TRandom3.h"
 #include <memory> // for std::unique_ptr
 #include <optional>
 #include <set>
@@ -14,8 +15,6 @@
 
 #include "GaudiKernel/IDataProviderSvc.h"
 #include "GaudiKernel/IMetaDataSvc.h"
-#include "GaudiKernel/IRndmGenSvc.h"
-#include "GaudiKernel/RndmGenerators.h"
 #include "GaudiKernel/ServiceHandle.h"
 #include "GaudiKernel/SmartIF.h"
 #include "k4FWCore/MetadataUtils.h"
@@ -23,8 +22,10 @@
 
 // K4FWCORE
 #include "k4Interface/IGeoSvc.h"
+#include "k4Interface/IUniqueIDGenSvc.h"
 
 // EDM4HEP
+#include "edm4hep/EventHeaderCollection.h"
 #include "edm4hep/SimTrackerHit.h"
 #include "edm4hep/SimTrackerHitCollection.h"
 #include "edm4hep/TrackerHitPlaneCollection.h"
@@ -57,7 +58,7 @@
 class VTXdigitizerDetailed final // Gaudi::Functional::
     : public k4FWCore::MultiTransformer<
           std::tuple<edm4hep::TrackerHitPlaneCollection, edm4hep::TrackerHitSimTrackerHitLinkCollection>(
-              const edm4hep::SimTrackerHitCollection&)> {
+              const edm4hep::SimTrackerHitCollection&, const edm4hep::EventHeaderCollection&)> {
 public:
   explicit VTXdigitizerDetailed(const std::string& aname, ISvcLocator* asvcLoc);
   ~VTXdigitizerDetailed() override = default;
@@ -71,7 +72,8 @@ public:
    *   @return status code
    */
   std::tuple<edm4hep::TrackerHitPlaneCollection, edm4hep::TrackerHitSimTrackerHitLinkCollection>
-  operator()(const edm4hep::SimTrackerHitCollection& inputSimHits) const override;
+  operator()(const edm4hep::SimTrackerHitCollection& inputSimHits,
+             const edm4hep::EventHeaderCollection& headers) const override;
   /**  Finalize.
    *   @return status code
    */
@@ -132,13 +134,12 @@ private:
   // Surface map from SurfaceManager
   const dd4hep::rec::SurfaceMap* surfaceMap;
 
-  // Random Number Service
-  SmartIF<IRndmGenSvc> m_randSvc;
-
-  // Gaussian random number generator used for time smearing
-  std::vector<Rndm::Numbers> m_gauss_t_vec;
-
-  Rndm::Numbers m_gauss_threshold; // for threshold's smearing
+  // Unique ID service, used to seed the random number engine for each event
+  SmartIF<IUniqueIDGenSvc> m_uidSvc;
+  // Random number engine (time and threshold smearing), re-seeded from the UniqueIDGenSvc at the start of every event,
+  // so that the result depends only on (seed, run number, event number, algorithm name) and not on the order in which
+  // events are processed
+  inline static thread_local TRandom3 m_engine;
 
   // Create a class to map the charge per pixel (x,y) in electrons
   using hit_map_type = std::map<int, std::map<int, float, std::less<int>>, std::less<int>>;

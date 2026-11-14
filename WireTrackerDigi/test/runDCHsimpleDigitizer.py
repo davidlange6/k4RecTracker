@@ -170,8 +170,13 @@ genAlg.AuditExecute = True
 hepmc_converter.AuditExecute = True
 geantsim.AuditExecute = True
 
+# EventHeader, needed to seed the random numbers of the digitizer for each event
+from Configurables import EventHeaderCreator
+
+eventHeaderCreator = EventHeaderCreator("eventHeaderCreator")
+
 ApplicationMgr(
-    TopAlg=[genAlg, hepmc_converter, geantsim, dch_digitizer],
+    TopAlg=[eventHeaderCreator, genAlg, hepmc_converter, geantsim, dch_digitizer],
     EvtSel="NONE",
     EvtMax=10,
     ExtSvc=[geoservice, podioevent, geantservice, audsvc],

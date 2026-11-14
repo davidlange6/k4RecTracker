@@ -13,23 +13,16 @@ DCHsimpleDigitizer::DCHsimpleDigitizer(const std::string& aName, ISvcLocator* aS
     : Gaudi::Algorithm(aName, aSvcLoc), m_geoSvc("GeoSvc", "DCHsimpleDigitizer") {
   declareProperty("inputSimHits", m_input_sim_hits, "Input sim tracker hit collection name");
   declareProperty("outputDigiHits", m_output_digi_hits, "Output digitized tracker hit collection name");
+  declareProperty("headerCollection", m_headers, "Event header collection, used to seed the random numbers");
 }
 
 DCHsimpleDigitizer::~DCHsimpleDigitizer() {}
 
 StatusCode DCHsimpleDigitizer::initialize() {
-  // Initialize random services
-  m_randSvc = service("RndmGenSvc", false);
-  if (!m_randSvc) {
-    error() << "Couldn't get RndmGenSvc!" << endmsg;
-    return StatusCode::FAILURE;
-  }
-  if (m_gauss_z.initialize(m_randSvc, Rndm::Gauss(0., m_z_resolution)).isFailure()) {
-    error() << "Couldn't initialize RndmGenSvc!" << endmsg;
-    return StatusCode::FAILURE;
-  }
-  if (m_gauss_xy.initialize(m_randSvc, Rndm::Gauss(0., m_xy_resolution)).isFailure()) {
-    error() << "Couldn't initialize RndmGenSvc!" << endmsg;
+  // Unique ID service, used to seed the random number engine for each event
+  m_uidSvc = service<IUniqueIDGenSvc>("UniqueIDGenSvc", true);
+  if (!m_uidSvc) {
+    error() << "Unable to get UniqueIDGenSvc" << endmsg;
     return StatusCode::FAILURE;
   }
 
@@ -50,6 +43,10 @@ StatusCode DCHsimpleDigitizer::execute(const EventContext&) const {
   // Get the input collection with Geant4 hits
   const edm4hep::SimTrackerHitCollection* input_sim_hits = m_input_sim_hits.get();
   debug() << "Input Sim Hit collection size: " << input_sim_hits->size() << endmsg;
+
+  // Seed the random number engine for this event (TRandom3 treats a seed of 0 as "random", so avoid it)
+  const auto seed = m_uidSvc->getUniqueID(*m_headers.get(), name()) & 0xffffffff;
+  m_engine.SetSeed(seed != 0 ? seed : 1);
 
   // Digitize the sim hits
   edm4hep::TrackerHit3DCollection* output_digi_hits = m_output_digi_hits.createAndPut();
@@ -83,10 +80,10 @@ StatusCode DCHsimpleDigitizer::execute(const EventContext&) const {
     dd4hep::rec::Vector3D simHitLocalPositionVector(simHitLocalPosition.X(), simHitLocalPosition.Y(),
                                                     simHitLocalPosition.Z());
     // get the smeared distance to the wire (cylindrical coordinate as the smearing should be perpendicular to the wire)
-    double smearedDistanceToWire = simHitLocalPositionVector.rho() + m_gauss_xy.shoot() * dd4hep::mm;
+    double smearedDistanceToWire = simHitLocalPositionVector.rho() + m_engine.Gaus(0., m_xy_resolution) * dd4hep::mm;
     // smear the z position (in local coordinate the z axis is aligned with the wire i.e. it take the stereo angle into
     // account);
-    double smearedZ = simHitLocalPositionVector.z() + m_gauss_z.shoot() * dd4hep::mm;
+    double smearedZ = simHitLocalPositionVector.z() + m_engine.Gaus(0., m_z_resolution) * dd4hep::mm;
     // build the local position vector of the smeared hit using cylindrical coordinates. When we will have
     // edm4hep::DCHit there will be probably no need
     ROOT::Math::Cylindrical3D digiHitLocalPositionVector(smearedDistanceToWire, smearedZ,

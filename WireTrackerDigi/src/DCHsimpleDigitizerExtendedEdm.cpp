@@ -15,23 +15,16 @@ DCHsimpleDigitizerExtendedEdm::DCHsimpleDigitizerExtendedEdm(const std::string& 
   declareProperty("outputDigiHits", m_output_digi_hits, "Output digitized tracker hit collection name");
   declareProperty("outputSimDigiAssociation", m_output_sim_digi_association,
                   "Output name for the association between digitized and simulated hit collections");
+  declareProperty("headerCollection", m_headers, "Event header collection, used to seed the random numbers");
 }
 
 DCHsimpleDigitizerExtendedEdm::~DCHsimpleDigitizerExtendedEdm() {}
 
 StatusCode DCHsimpleDigitizerExtendedEdm::initialize() {
-  // Initialize random services
-  m_randSvc = service("RndmGenSvc", false);
-  if (!m_randSvc) {
-    error() << "Couldn't get RndmGenSvc!" << endmsg;
-    return StatusCode::FAILURE;
-  }
-  if (m_gauss_z.initialize(m_randSvc, Rndm::Gauss(0., m_z_resolution)).isFailure()) {
-    error() << "Couldn't initialize RndmGenSvc!" << endmsg;
-    return StatusCode::FAILURE;
-  }
-  if (m_gauss_xy.initialize(m_randSvc, Rndm::Gauss(0., m_xy_resolution)).isFailure()) {
-    error() << "Couldn't initialize RndmGenSvc!" << endmsg;
+  // Unique ID service, used to seed the random number engine for each event
+  m_uidSvc = service<IUniqueIDGenSvc>("UniqueIDGenSvc", true);
+  if (!m_uidSvc) {
+    error() << "Unable to get UniqueIDGenSvc" << endmsg;
     return StatusCode::FAILURE;
   }
 
@@ -52,6 +45,10 @@ StatusCode DCHsimpleDigitizerExtendedEdm::execute(const EventContext&) const {
   // Get the input collection with Geant4 hits
   const edm4hep::SimTrackerHitCollection* input_sim_hits = m_input_sim_hits.get();
   debug() << "Input Sim Hit collection size: " << input_sim_hits->size() << endmsg;
+
+  // Seed the random number engine for this event (TRandom3 treats a seed of 0 as "random", so avoid it)
+  const auto seed = m_uidSvc->getUniqueID(*m_headers.get(), name()) & 0xffffffff;
+  m_engine.SetSeed(seed != 0 ? seed : 1);
 
   // Prepare a collection for digitized hits in local coordinate (only filled in debug mode)
   extension::DriftChamberDigiCollection* output_digi_hits = m_output_digi_hits.createAndPut();
@@ -100,16 +97,16 @@ StatusCode DCHsimpleDigitizerExtendedEdm::execute(const EventContext&) const {
                                                     simHitLocalPosition.Z() / dd4hep::mm);
     // get the smeared distance to the wire (cylindrical coordinate as the smearing should be perpendicular to the wire)
     debug() << "Original distance to wire: " << simHitLocalPositionVector.rho() << " mm" << endmsg;
-    double smearedDistanceToWire = simHitLocalPositionVector.rho() + m_gauss_xy.shoot();
+    double smearedDistanceToWire = simHitLocalPositionVector.rho() + m_engine.Gaus(0., m_xy_resolution);
     while (smearedDistanceToWire < 0) {
       debug() << "Negative smearedDistanceToWire (" << smearedDistanceToWire << ") shooting another random number"
               << endmsg;
-      smearedDistanceToWire = simHitLocalPositionVector.rho() + m_gauss_xy.shoot();
+      smearedDistanceToWire = simHitLocalPositionVector.rho() + m_engine.Gaus(0., m_xy_resolution);
     }
     debug() << "Smeared distance to wire: " << smearedDistanceToWire << " mm " << endmsg;
     // smear the z position (in local coordinate the z axis is aligned with the wire i.e. it take the stereo angle into
     // account);
-    double smearedZ = simHitLocalPositionVector.z() + m_gauss_z.shoot();
+    double smearedZ = simHitLocalPositionVector.z() + m_engine.Gaus(0., m_z_resolution);
     // NB: here we assume the hit is radially in the middle of the cell
     // create the left and right hit local position (in cm again because of the transform matrix)
     double leftHitLocalPosition[3] = {-1 * smearedDistanceToWire * dd4hep::mm, 0, smearedZ * dd4hep::mm};

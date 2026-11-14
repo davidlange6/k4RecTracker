@@ -3,14 +3,14 @@
 // GAUDI
 #include "Gaudi/Algorithm.h"
 #include "Gaudi/Property.h"
-#include "GaudiKernel/IRndmGenSvc.h"
-#include "GaudiKernel/RndmGenerators.h"
 
 // K4FWCORE
 #include "k4FWCore/DataHandle.h"
 #include "k4Interface/IGeoSvc.h"
+#include "k4Interface/IUniqueIDGenSvc.h"
 
 // EDM4HEP
+#include "edm4hep/EventHeaderCollection.h"
 #include "edm4hep/SimTrackerHitCollection.h"
 #include "edm4hep/TrackerHit3DCollection.h"
 #include "edm4hep/TrackerHitSimTrackerHitLinkCollection.h"
@@ -21,6 +21,8 @@
 #include "DDRec/Vector3D.h"
 
 #include "DDSegmentation/BitFieldCoder.h"
+
+#include "TRandom3.h"
 
 #include <vector>
 
@@ -99,11 +101,12 @@ private:
       this, "forceHitsOntoSurface", false,
       "Project hits onto the surface in case they are not yet on the surface (default: false"};
 
-  // Random Number Service
-  SmartIF<IRndmGenSvc> m_randSvc;
-
-  // Gaussian random number generator used for smearing
-  std::vector<Rndm::Numbers> m_gauss_x_vec;
-  std::vector<Rndm::Numbers> m_gauss_y_vec;
-  std::vector<Rndm::Numbers> m_gauss_t_vec;
+  // Event header, used to seed the random number engine for each event
+  mutable k4FWCore::DataHandle<edm4hep::EventHeaderCollection> m_headers{"EventHeader", Gaudi::DataHandle::Reader,
+                                                                         this};
+  // Unique ID service, used to seed the random number engine for each event
+  SmartIF<IUniqueIDGenSvc> m_uidSvc;
+  // Random number engine, re-seeded from the UniqueIDGenSvc at the start of every event, so that the result depends
+  // only on (seed, run number, event number, algorithm name) and not on the order in which events are processed
+  inline static thread_local TRandom3 m_engine;
 };
