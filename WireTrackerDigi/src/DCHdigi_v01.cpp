@@ -18,15 +18,15 @@ DCHdigi_v01::DCHdigi_v01(const std::string& name, ISvcLocator* svcLoc)
                            KeyValues("HeaderName", {"EventHeader"}),
                        },
                        {KeyValues("DCH_DigiCollection", {"DCH_DigiCollection"}),
-                        KeyValues("DCH_DigiSimAssociationCollection", {"DCH_DigiSimAssociationCollection"})}) {
-  m_geoSvc = serviceLocator()->service(m_geoSvcName);
-  m_uidSvc = serviceLocator()->service(m_uidSvcName);
-}
+                        KeyValues("DCH_DigiSimAssociationCollection", {"DCH_DigiSimAssociationCollection"})}) {}
 
 ///////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////       initialize       ////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 StatusCode DCHdigi_v01::initialize() {
+  // the services are retrieved here, and not in the constructor, so that the configured names are used
+  m_geoSvc = serviceLocator()->service(m_geoSvcName);
+  m_uidSvc = serviceLocator()->service(m_uidSvcName);
   if (!m_uidSvc)
     ThrowException("Unable to get UniqueIDGenSvc");
 

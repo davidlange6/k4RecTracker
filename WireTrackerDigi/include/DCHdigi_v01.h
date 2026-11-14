@@ -28,7 +28,7 @@
  * @param GeoSvcName Geometry service name <br>
  * (default value GeoSvc) <br>
  * @param uidSvcName The name of the UniqueIDGenSvc instance, used to create seed for each event/run, ensuring
- * reproducibility. <br> (default value uidSvc) <br> <br>
+ * reproducibility. <br> (default value UniqueIDGenSvc) <br> <br>
  */
 
 #ifndef DCHDIGI_V01_H
@@ -96,7 +96,8 @@ private:
 
   /// Geometry service name
   Gaudi::Property<std::string> m_geoSvcName{this, "GeoSvcName", "GeoSvc", "The name of the GeoSvc instance"};
-  Gaudi::Property<std::string> m_uidSvcName{this, "uidSvcName", "uidSvc", "The name of the UniqueIDGenSvc instance"};
+  Gaudi::Property<std::string> m_uidSvcName{this, "uidSvcName", "UniqueIDGenSvc",
+                                            "The name of the UniqueIDGenSvc instance"};
 
   /// Detector name
   Gaudi::Property<std::string> m_DCH_name{this, "DCH_name", "DCH_v2", "Name of the Drift Chamber detector"};

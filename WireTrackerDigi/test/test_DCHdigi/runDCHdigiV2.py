@@ -39,6 +39,6 @@ mgr = ApplicationMgr(
     TopAlg=[DCHdigi],
     EvtSel="NONE",
     EvtMax=-1,
-    ExtSvc=[geoservice, EventDataSvc("EventDataSvc"), UniqueIDGenSvc("uidSvc")],
+    ExtSvc=[geoservice, EventDataSvc("EventDataSvc"), UniqueIDGenSvc("UniqueIDGenSvc")],
     OutputLevel=INFO,
 )
